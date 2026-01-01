@@ -1,74 +1,134 @@
 import * as THREE from 'three';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export class Player {
   constructor(scene) {
     this.scene = scene;
     this.object = null;
+    this.mixer = null;
     this.position = new THREE.Vector3(0, 0, 0);
     this.speed = 0.1;
     this.horizontalRange = 5;
     this.tiltAngle = 0;
-    this.maxTilt = 0.3; // Max tilt in radians (about 17 degrees)
+    this.maxTilt = 0.3;
     this.tiltSpeed = 0.1;
     this.hoverOffset = 0;
     this.hoverSpeed = 0.05;
     this.hoverAmount = 0.15;
+    this.clock = new THREE.Clock();
   }
 
   async load() {
     return new Promise((resolve, reject) => {
-      const mtlLoader = new MTLLoader();
-      mtlLoader.setPath('models/');
+      const loader = new GLTFLoader();
 
-      mtlLoader.load('jetanima.mtl', (materials) => {
-        materials.preload();
+      loader.load(
+        'toon_girl_character.glb',
+        (gltf) => {
+          this.object = gltf.scene;
 
-        const objLoader = new OBJLoader();
-        objLoader.setMaterials(materials);
-        objLoader.setPath('models/');
+          // Scale the model (adjust as needed)
+          this.object.scale.set(1, 1, 1); // GLB usually has good default scale
 
-        objLoader.load(
-          'jetanima.obj',
-          (obj) => {
-            this.object = obj;
-            this.object.position.copy(this.position);
+          // Position at origin
+          this.object.position.copy(this.position);
 
-            // Adjust scale if needed (you may need to tweak this)
-            this.object.scale.set(0.5, 0.5, 0.5);
+          // Rotate to face forward if needed
+          this.object.rotation.y = Math.PI; // Test this - might need adjustment
 
-            // Rotate to face forward (into the screen)
-            this.object.rotation.y = Math.PI;
-
-            // Apply white material to all meshes
-            this.object.traverse((child) => {
-              if (child.isMesh) {
-                child.material = new THREE.MeshStandardMaterial({
-                  color: 0xffffff,
-                  metalness: 0.3,
-                  roughness: 0.4
-                });
+          // Enhance materials for better look
+          this.object.traverse((child) => {
+            if (child.isMesh) {
+              // Keep original materials but enhance them
+              if (child.material) {
+                child.material.roughness = 0.7;
+                child.material.metalness = 0;
+                // Enable shadows if needed
+                child.castShadow = true;
+                child.receiveShadow = true;
               }
-            });
+            }
+          });
 
-            this.scene.add(this.object);
-            resolve();
-          },
-          undefined,
-          reject
-        );
-      });
+          // Setup animation if it exists in the GLB
+          if (gltf.animations && gltf.animations.length > 0) {
+            this.mixer = new THREE.AnimationMixer(this.object);
+            // Play first animation (if any)
+            const action = this.mixer.clipAction(gltf.animations[0]);
+            action.play();
+            console.log('GLB animation playing:', gltf.animations[0].name);
+          } else {
+            console.log('No animations in GLB file');
+          }
+
+          this.scene.add(this.object);
+          console.log('GLB character loaded successfully');
+          resolve();
+        },
+        (progress) => {
+          const percent = (progress.loaded / progress.total * 100).toFixed(0);
+          console.log('Loading GLB:', percent + '%');
+        },
+        (error) => {
+          console.error('GLB load error:', error);
+          // Fallback to placeholder
+          this.createPlaceholder();
+          resolve();
+        }
+      );
     });
+  }
+
+  createPlaceholder() {
+    this.object = new THREE.Group();
+    const bodyColor = 0xffd4a3;
+    const hairColor = 0xc4956c;
+
+    const bodyGeometry = new THREE.CapsuleGeometry(0.15, 0.6, 8, 16);
+    const bodyMaterial = new THREE.MeshStandardMaterial({
+      color: bodyColor,
+      roughness: 0.7,
+      metalness: 0,
+      flatShading: true
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.position.y = 0.3;
+    this.object.add(body);
+
+    const headGeometry = new THREE.SphereGeometry(0.12, 8, 8);
+    const head = new THREE.Mesh(headGeometry, bodyMaterial);
+    head.position.y = 0.75;
+    this.object.add(head);
+
+    const hairGeometry = new THREE.ConeGeometry(0.13, 0.5, 8);
+    const hairMaterial = new THREE.MeshStandardMaterial({
+      color: hairColor,
+      roughness: 0.8,
+      metalness: 0,
+      flatShading: true
+    });
+    const hair = new THREE.Mesh(hairGeometry, hairMaterial);
+    hair.position.set(0, 0.85, -0.05);
+    hair.rotation.x = Math.PI;
+    this.object.add(hair);
+
+    this.object.scale.set(1.5, 1.5, 1.5);
+    this.object.position.copy(this.position);
+    this.scene.add(this.object);
+    console.log('Placeholder character created');
   }
 
   update(horizontalInput, windDrift = 0) {
     if (!this.object) return;
 
+    // Update animation if it exists
+    if (this.mixer) {
+      const delta = this.clock.getDelta();
+      this.mixer.update(delta);
+    }
+
     // Move left/right based on input + wind
     this.position.x += horizontalInput * this.speed + windDrift;
-
-    // Clamp position to stay in bounds
     this.position.x = Math.max(-this.horizontalRange, Math.min(this.horizontalRange, this.position.x));
 
     // Bank/tilt based on movement direction
