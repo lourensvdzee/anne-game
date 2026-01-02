@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Player } from './player.js';
 import { InputManager } from './input.js';
 import { CloudSystem } from './clouds.js';
+import { SpeedEffectSystem } from './speedEffects.js';
 
 export class Game {
   constructor(canvas) {
@@ -17,10 +18,15 @@ export class Game {
     this.input = new InputManager();
     this.player = new Player(this.scene);
     this.clouds = new CloudSystem(this.scene);
+    this.speedEffects = null; // Will be initialized after player loads
 
     // Wind effect
     this.windTime = 0;
     this.windStrength = 0.002; // Very subtle
+
+    // Speed effects toggle
+    this.speedEffectsEnabled = true;
+    this.clock = new THREE.Clock();
 
     this.setupRenderer();
     this.setupCamera();
@@ -35,8 +41,8 @@ export class Game {
   }
 
   setupCamera() {
-    // Camera behind and above the player
-    this.camera.position.set(0, 3, 8);
+    // Camera even closer for bigger character view
+    this.camera.position.set(0, 1.5, 3.5);
     this.camera.lookAt(0, 0, 0);
   }
 
@@ -56,54 +62,164 @@ export class Game {
 
     // Light controls
     this.setupLightControls();
-
-    console.log('Monument Valley lighting complete');
-    console.log('Light controls: I/K (up/down), J/L (left/right), U/O (forward/back)');
   }
 
   setupLightControls() {
     window.addEventListener('keydown', (e) => {
       const moveSpeed = 0.5;
+      const rotationSpeed = 1; // degrees
 
       switch(e.code) {
         case 'KeyI': // Move light up
           this.sun.position.y += moveSpeed;
-          console.log('Sun position:', this.sun.position);
           break;
         case 'KeyK': // Move light down
           this.sun.position.y -= moveSpeed;
-          console.log('Sun position:', this.sun.position);
           break;
         case 'KeyJ': // Move light left
           this.sun.position.x -= moveSpeed;
-          console.log('Sun position:', this.sun.position);
           break;
         case 'KeyL': // Move light right
           this.sun.position.x += moveSpeed;
-          console.log('Sun position:', this.sun.position);
           break;
         case 'KeyU': // Move light forward
           this.sun.position.z -= moveSpeed;
-          console.log('Sun position:', this.sun.position);
           break;
         case 'KeyO': // Move light backward
           this.sun.position.z += moveSpeed;
-          console.log('Sun position:', this.sun.position);
+          break;
+        case 'KeyN': // Increase base rotation
+          this.player.baseRotationY += rotationSpeed;
+          break;
+        case 'KeyM': // Decrease base rotation
+          this.player.baseRotationY -= rotationSpeed;
+          break;
+        case 'Digit1': // Increase left movement rotation
+          this.player.rotationLeft += rotationSpeed;
+          break;
+        case 'Digit2': // Decrease left movement rotation
+          this.player.rotationLeft -= rotationSpeed;
+          break;
+        case 'Digit3': // Increase right movement rotation
+          this.player.rotationRight += rotationSpeed;
+          break;
+        case 'Digit4': // Decrease right movement rotation
+          this.player.rotationRight -= rotationSpeed;
+          break;
+        case 'Digit7': // Tilt back (front up)
+          this.player.tiltX += rotationSpeed;
+          break;
+        case 'Digit8': // Tilt forward (front down)
+          this.player.tiltX -= rotationSpeed;
+          break;
+        case 'Digit5': // Increase banking tilt amount
+          this.player.maxTilt += 0.05;
+          break;
+        case 'Digit6': // Decrease banking tilt amount
+          this.player.maxTilt -= 0.05;
+          if (this.player.maxTilt < 0) this.player.maxTilt = 0;
+          break;
+        case 'KeyR': // Reverse vertical controls
+          this.player.reverseVertical = !this.player.reverseVertical;
+          break;
+        case 'KeyP': // Log current position
+          console.log('Position Y:', this.player.position.y.toFixed(2));
+          break;
+        case 'KeyT': // Toggle speed effects
+          this.speedEffectsEnabled = !this.speedEffectsEnabled;
+          if (!this.speedEffectsEnabled && this.speedEffects) {
+            this.speedEffects.dispose();
+          }
+          break;
+        case 'KeyQ': // Move speed lines closer to character (more toward camera)
+          if (this.speedEffects) {
+            this.speedEffects.startZOffset += 0.1;
+            console.log('Speed line start Z offset:', this.speedEffects.startZOffset.toFixed(2));
+          }
+          break;
+        case 'KeyE': // Move speed lines further from character (more toward background)
+          if (this.speedEffects) {
+            this.speedEffects.startZOffset -= 0.1;
+            console.log('Speed line Z offset:', this.speedEffects.startZOffset.toFixed(2));
+          }
+          break;
+        case 'KeyZ': // Move speed lines up (higher on character)
+          if (this.speedEffects) {
+            this.speedEffects.startYOffset += 0.1;
+            console.log('Speed line Y offset:', this.speedEffects.startYOffset.toFixed(2));
+          }
+          break;
+        case 'KeyX': // Move speed lines down (lower on character)
+          if (this.speedEffects) {
+            this.speedEffects.startYOffset -= 0.1;
+            console.log('Speed line Y offset:', this.speedEffects.startYOffset.toFixed(2));
+          }
+          break;
+        case 'KeyH': // Increase hair sway amount
+          this.player.hairSwayAmount += 0.05;
+          console.log('Hair sway amount:', this.player.hairSwayAmount.toFixed(2));
+          break;
+        case 'KeyG': // Decrease hair sway amount
+          this.player.hairSwayAmount -= 0.05;
+          if (this.player.hairSwayAmount < 0) this.player.hairSwayAmount = 0;
+          console.log('Hair sway amount:', this.player.hairSwayAmount.toFixed(2));
+          break;
+        case 'KeyV': // Increase dress sway amount
+          this.player.dressSwayAmount += 0.05;
+          console.log('Dress sway amount:', this.player.dressSwayAmount.toFixed(2));
+          break;
+        case 'KeyB': // Decrease dress sway amount
+          this.player.dressSwayAmount -= 0.05;
+          if (this.player.dressSwayAmount < 0) this.player.dressSwayAmount = 0;
+          console.log('Dress sway amount:', this.player.dressSwayAmount.toFixed(2));
+          break;
+        case 'Period': // Next hair movement preset (. key)
+          this.player.nextHairPreset();
+          break;
+        case 'Comma': // Previous hair movement preset (, key)
+          this.player.previousHairPreset();
+          break;
+        case 'Numpad8': // Hair stands toward camera (forward)
+          this.player.hairStandDirectionX -= 0.1;
+          console.log('Hair stands toward camera:', this.player.hairStandDirectionX.toFixed(2));
+          break;
+        case 'Numpad2': // Hair stands away from camera (backward)
+          this.player.hairStandDirectionX += 0.1;
+          console.log('Hair stands away from camera:', this.player.hairStandDirectionX.toFixed(2));
+          break;
+        case 'Numpad4': // Hair stands to the left
+          this.player.hairStandDirectionZ -= 0.1;
+          console.log('Hair stands to the left:', this.player.hairStandDirectionZ.toFixed(2));
+          break;
+        case 'Numpad6': // Hair stands to the right
+          this.player.hairStandDirectionZ += 0.1;
+          console.log('Hair stands to the right:', this.player.hairStandDirectionZ.toFixed(2));
+          break;
+        case 'NumpadAdd': // Hair stands up (+)
+          this.player.hairStandDirectionY += 0.1;
+          console.log('Hair stands up:', this.player.hairStandDirectionY.toFixed(2));
+          break;
+        case 'NumpadSubtract': // Hair stands down (-)
+          this.player.hairStandDirectionY -= 0.1;
+          console.log('Hair stands down:', this.player.hairStandDirectionY.toFixed(2));
+          break;
+        case 'Numpad5': // Reset hair to default
+          this.player.hairStandDirectionX = -1.6;
+          this.player.hairStandDirectionY = 0.0;
+          this.player.hairStandDirectionZ = 0.4;
+          console.log('Hair reset to default (X:-1.6, Y:0.0, Z:0.4)');
           break;
       }
     });
   }
 
   setupSky() {
-    // Gradient sky - Monument Valley inspired pastel sunset
-    // Create gradient using fog and background color
-    const skyColor = new THREE.Color(0xffd4a3); // Warm peach/pink upper sky
-    const horizonColor = new THREE.Color(0xb8d4e8); // Soft blue horizon
+    // Light blue sky with subtle fog gradient
+    const skyColor = new THREE.Color(0x87ceeb); // Light sky blue
+    const horizonColor = new THREE.Color(0xb8d4e8); // Slightly different blue for horizon
 
     this.scene.background = skyColor;
     this.scene.fog = new THREE.Fog(horizonColor, 15, 60);
-
-    console.log('Pastel gradient sky complete');
   }
 
   setupResize() {
@@ -116,21 +232,31 @@ export class Game {
 
   async init() {
     await this.player.load();
+    // Initialize speed effects after player is loaded
+    this.speedEffects = new SpeedEffectSystem(this.scene, this.player);
   }
 
   update() {
-    // Get base input from player
+    const delta = this.clock.getDelta();
+
+    // Get input from player
     let horizontalInput = this.input.getHorizontalInput();
+    let verticalInput = this.input.getVerticalInput();
 
     // Add gentle wind drift
     this.windTime += 0.01;
     const windDrift = Math.sin(this.windTime) * this.windStrength;
 
     // Update player with input + wind
-    this.player.update(horizontalInput, windDrift);
+    this.player.update(horizontalInput, verticalInput, windDrift);
 
     // Update cloud system
     this.clouds.update();
+
+    // Update speed effects
+    if (this.speedEffects && this.speedEffectsEnabled) {
+      this.speedEffects.update(delta);
+    }
   }
 
   render() {

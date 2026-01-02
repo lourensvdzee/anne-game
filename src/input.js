@@ -60,4 +60,14 @@ export class InputManager {
 
     return direction;
   }
+
+  getVerticalInput() {
+    let direction = 0;
+
+    // Keyboard input
+    if (this.keys['ArrowUp'] || this.keys['KeyW']) direction += 1;
+    if (this.keys['ArrowDown'] || this.keys['KeyS']) direction -= 1;
+
+    return direction;
+  }
 }

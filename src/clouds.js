@@ -5,39 +5,50 @@ export class CloudSystem {
     this.scene = scene;
     this.clouds = [];
     this.cloudSpeed = 0.05;
-    this.spawnInterval = 2500; // Slower spawn = fewer clouds
+    this.spawnInterval = 1500; // Back to more clouds
     this.lastSpawnTime = 0;
-    this.maxClouds = 12; // Much fewer clouds
+    this.maxClouds = 20; // More clouds like before
   }
 
   createCloud() {
     // Monument Valley style - smooth, soft, realistic clouds
     const cloudGroup = new THREE.Group();
 
-    // Ultra-soft cloud material - light blue, NO shadows
+    // BRIGHT WHITE clouds - very transparent while keeping white color
     const cloudMaterial = new THREE.MeshStandardMaterial({
-      color: 0xb8d4e8, // Light blue (same as horizon fog color)
+      color: 0xffffff, // Pure white
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.25, // Very transparent (was 0.5)
       roughness: 1.0,
       metalness: 0.0,
       flatShading: false,
       side: THREE.DoubleSide,
-      // Prevent dark spots where spheres overlap
-      depthWrite: false, // Don't write to depth buffer
-      blending: THREE.AdditiveBlending // Additive blending for soft overlaps
+      depthWrite: false,
+      blending: THREE.AdditiveBlending // Additive blending for bright white
     });
 
-    // Create 6-12 spheres for softer, less massive clouds
-    const numPuffs = 6 + Math.floor(Math.random() * 7);
+    // Create 8-12 spheres - balanced between quality and performance
+    const numPuffs = 8 + Math.floor(Math.random() * 5);
 
     for (let i = 0; i < numPuffs; i++) {
-      // Wide size variation for organic look
-      const size = 0.6 + Math.random() * 1.8;
+      // Wide size variation including small details
+      // Mix of large (0.8-2.0), medium (0.4-0.8), and small (0.2-0.4) spheres
+      let size;
+      const sizeRandom = Math.random();
+      if (sizeRandom < 0.4) {
+        // 40% large spheres (main cloud body)
+        size = 0.8 + Math.random() * 1.2;
+      } else if (sizeRandom < 0.7) {
+        // 30% medium spheres (fill gaps)
+        size = 0.4 + Math.random() * 0.4;
+      } else {
+        // 30% small spheres (fine details)
+        size = 0.2 + Math.random() * 0.2;
+      }
 
-      // HIGH poly count for smoothness (32 segments)
+      // LOWER poly count to prevent memory issues (16 segments instead of 32)
       const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(size, 32, 32), // Very smooth spheres
+        new THREE.SphereGeometry(size, 16, 16), // Lower poly to save memory
         cloudMaterial
       );
 
