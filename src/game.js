@@ -41,9 +41,20 @@ export class Game {
   }
 
   setupCamera() {
-    // Camera even closer for bigger character view
-    this.camera.position.set(0, 1.5, 3.5);
-    this.camera.lookAt(0, 0, 0);
+    // Camera position - locked in sweet spot
+    this.cameraY = -0.70;
+    this.cameraZ = 3.50;
+    this.cameraLookAtY = -0.80;
+
+    this.camera.position.set(0, this.cameraY, this.cameraZ);
+    this.camera.lookAt(0, this.cameraLookAtY, 0);
+  }
+
+  // Call this to update camera and log values
+  updateCamera() {
+    this.camera.position.set(0, this.cameraY, this.cameraZ);
+    this.camera.lookAt(0, this.cameraLookAtY, 0);
+    console.log(`Camera - Position Y: ${this.cameraY.toFixed(2)}, Z: ${this.cameraZ.toFixed(2)}, LookAt Y: ${this.cameraLookAtY.toFixed(2)}`);
   }
 
   setupLights() {
@@ -208,6 +219,32 @@ export class Game {
           this.player.hairStandDirectionY = 0.0;
           this.player.hairStandDirectionZ = 0.4;
           console.log('Hair reset to default (X:-1.6, Y:0.0, Z:0.4)');
+          break;
+
+        // Camera controls - use [ ] for camera Y, ; ' for lookAt Y
+        case 'BracketLeft': // [ - Move camera down
+          this.cameraY -= 0.2;
+          this.updateCamera();
+          break;
+        case 'BracketRight': // ] - Move camera up
+          this.cameraY += 0.2;
+          this.updateCamera();
+          break;
+        case 'Semicolon': // ; - Move lookAt down
+          this.cameraLookAtY -= 0.2;
+          this.updateCamera();
+          break;
+        case 'Quote': // ' - Move lookAt up
+          this.cameraLookAtY += 0.2;
+          this.updateCamera();
+          break;
+        case 'Backslash': // \ - Move camera closer (Z)
+          this.cameraZ -= 0.2;
+          this.updateCamera();
+          break;
+        case 'Enter': // Enter - Move camera further (Z)
+          this.cameraZ += 0.2;
+          this.updateCamera();
           break;
       }
     });

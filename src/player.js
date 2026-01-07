@@ -7,23 +7,35 @@ export class Player {
     this.scene = scene;
     this.object = null;
     this.mixer = null;
-    this.position = new THREE.Vector3(0, -1.12, 0); // Default position
+    this.position = new THREE.Vector3(0, -1.76, 0); // Default position - visually centered on screen
     this.speed = 0.1;
     this.verticalSpeed = 0.08; // Speed for up/down movement
 
-    // Horizontal limits vary with vertical position
-    this.topLeftLimit = -3.44;
-    this.topRightLimit = 3.39;
-    this.bottomLeftLimit = -7.00;
-    this.bottomRightLimit = 7.00;
+    // Base limits for full-size screen (these are reference values)
+    this.baseTopLeftLimit = -3.44;
+    this.baseTopRightLimit = 3.39;
+    this.baseBottomLeftLimit = -4.35;
+    this.baseBottomRightLimit = 4.35;
+    this.baseMinVerticalPosition = -4.40;
+    this.baseMaxVerticalPosition = 1.44;
 
-    this.minVerticalPosition = -5.60; // Bottom limit
-    this.maxVerticalPosition = 1.44; // Top limit
+    // Actual limits (will be scaled for screen size)
+    this.topLeftLimit = this.baseTopLeftLimit;
+    this.topRightLimit = this.baseTopRightLimit;
+    this.bottomLeftLimit = this.baseBottomLeftLimit;
+    this.bottomRightLimit = this.baseBottomRightLimit;
+    this.minVerticalPosition = this.baseMinVerticalPosition;
+    this.maxVerticalPosition = this.baseMaxVerticalPosition;
+
     this.reverseVertical = false; // Toggle for reversing up/down controls
 
     // Track horizontal "lane" as a percentage (0.0 = far left, 1.0 = far right)
     // This allows the character to follow the same curved path when moving vertically
     this.horizontalLanePercent = 0.5; // Start in middle
+
+    // Update limits based on current screen size
+    this.updateLimitsForScreenSize();
+    window.addEventListener('resize', () => this.updateLimitsForScreenSize());
 
     this.hoverOffset = 0;
     this.hoverSpeed = 0.05;
@@ -152,6 +164,40 @@ export class Player {
         multiplier: 0.8
       }
     ];
+  }
+
+  updateLimitsForScreenSize() {
+    // Reference width (the width these base values were designed for)
+    const referenceWidth = 1920;
+    const referenceHeight = 1080;
+
+    const currentWidth = window.innerWidth;
+    const currentHeight = window.innerHeight;
+
+    // For horizontal limits, scale based on aspect ratio
+    // Narrower screens need smaller horizontal limits
+    const aspectRatio = currentWidth / currentHeight;
+    const referenceAspectRatio = referenceWidth / referenceHeight;
+    const aspectScale = aspectRatio / referenceAspectRatio;
+
+    // Apply scaling to horizontal limits
+    this.topLeftLimit = this.baseTopLeftLimit * aspectScale;
+    this.topRightLimit = this.baseTopRightLimit * aspectScale;
+    this.bottomLeftLimit = this.baseBottomLeftLimit * aspectScale;
+    this.bottomRightLimit = this.baseBottomRightLimit * aspectScale;
+
+    // Vertical limits stay the same (camera handles vertical scaling)
+    this.minVerticalPosition = this.baseMinVerticalPosition;
+    this.maxVerticalPosition = this.baseMaxVerticalPosition;
+
+    // Clamp position if it's now outside the new limits
+    const verticalPercent = (this.position.y - this.minVerticalPosition) /
+                           (this.maxVerticalPosition - this.minVerticalPosition);
+    const minX = this.topLeftLimit + (this.bottomLeftLimit - this.topLeftLimit) * (1 - verticalPercent);
+    const maxX = this.topRightLimit + (this.bottomRightLimit - this.topRightLimit) * (1 - verticalPercent);
+    this.position.x = Math.max(minX, Math.min(maxX, this.position.x));
+
+    console.log(`Screen resized - Limits updated for ${currentWidth}x${currentHeight} (aspect: ${aspectScale.toFixed(2)})`);
   }
 
   async load() {
@@ -398,6 +444,13 @@ export class Player {
       this.position.y + hoverY,
       this.position.z
     );
+
+    // Log position every 60 frames (roughly once per second)
+    if (!this.frameCount) this.frameCount = 0;
+    this.frameCount++;
+    if (this.frameCount % 60 === 0) {
+      console.log(`Position - X: ${this.position.x.toFixed(2)}, Y: ${this.position.y.toFixed(2)}, Z: ${this.position.z.toFixed(2)}`);
+    }
 
     // Apply rotation: forward tilt (x) + vertical tilt, current y rotation, and banking (z)
     const totalXTilt = this.tiltX + this.verticalTilt;
