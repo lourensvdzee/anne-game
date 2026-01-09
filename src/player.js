@@ -8,16 +8,16 @@ export class Player {
     this.object = null;
     this.mixer = null;
     this.position = new THREE.Vector3(0, -1.76, 0); // Default position - visually centered on screen
-    this.speed = 0.1;
-    this.verticalSpeed = 0.08; // Speed for up/down movement
+    this.speed = 0.15; // Horizontal speed (increased from 0.1)
+    this.verticalSpeed = 0.12; // Speed for up/down movement (increased from 0.08)
 
     // Base limits for full-size screen (these are reference values)
-    this.baseTopLeftLimit = -3.44;
-    this.baseTopRightLimit = 3.39;
+    this.baseTopLeftLimit = -3.40;
+    this.baseTopRightLimit = 3.09;
     this.baseBottomLeftLimit = -4.35;
     this.baseBottomRightLimit = 4.35;
     this.baseMinVerticalPosition = -4.40;
-    this.baseMaxVerticalPosition = 1.44;
+    this.baseMaxVerticalPosition = 0.88;
 
     // Actual limits (will be scaled for screen size)
     this.topLeftLimit = this.baseTopLeftLimit;
@@ -235,18 +235,56 @@ export class Player {
       }
     });
 
-    // Try to apply animation from the FBX
+    // Set up animation mixer
+    this.mixer = new THREE.AnimationMixer(this.object);
+
+    // Store flying animation as default
     if (fbx.animations && fbx.animations.length > 0) {
-      this.mixer = new THREE.AnimationMixer(this.object);
-      const action = this.mixer.clipAction(fbx.animations[0]);
-      action.play();
-      action.setLoop(THREE.LoopRepeat, Infinity);
+      this.flyingAction = this.mixer.clipAction(fbx.animations[0]);
+      this.flyingAction.play();
+      this.flyingAction.setLoop(THREE.LoopRepeat, Infinity);
+    }
+
+    // Load hit animation
+    try {
+      const hitFbx = await this.loadFBX('Hit_Backwards.fbx');
+      if (hitFbx.animations && hitFbx.animations.length > 0) {
+        this.hitClip = hitFbx.animations[0];
+        this.hitAction = this.mixer.clipAction(this.hitClip);
+        this.hitAction.setLoop(THREE.LoopOnce, 1);
+        this.hitAction.clampWhenFinished = true;
+        console.log('Hit animation loaded successfully');
+      }
+    } catch (error) {
+      console.warn('Could not load hit animation:', error);
     }
 
     this.scene.add(this.object);
 
     // Find bones for physics (hair/dress)
     this.findPhysicsBones();
+  }
+
+  playHitAnimation() {
+    if (!this.hitAction || !this.flyingAction) {
+      console.log('Hit animation not available');
+      return;
+    }
+
+    console.log('Playing hit animation!');
+
+    // Crossfade from flying to hit
+    this.hitAction.reset();
+    this.hitAction.play();
+    this.flyingAction.crossFadeTo(this.hitAction, 0.1, false);
+
+    // After hit animation completes, fade back to flying
+    const duration = this.hitClip.duration * 1000; // Convert to ms
+    setTimeout(() => {
+      this.hitAction.crossFadeTo(this.flyingAction, 0.3, false);
+      this.flyingAction.reset();
+      this.flyingAction.play();
+    }, Math.max(duration - 300, 200)); // Start fading before animation ends
   }
 
   findPhysicsBones() {
@@ -367,13 +405,34 @@ export class Player {
     this.scene.add(this.object);
   }
 
-  update(horizontalInput, verticalInput, windDrift = 0) {
+  update(horizontalInput, verticalInput, windDrift = 0, gustInfo = null) {
     if (!this.object) return;
 
     // Update animation if it exists
     if (this.mixer) {
       const delta = this.clock.getDelta();
       this.mixer.update(delta);
+    }
+
+    // Store gust info for visual effects
+    this.currentGustInfo = gustInfo || { gustActive: false, gustDirection: 0, gustIntensity: 0 };
+
+    // Calculate movement resistance based on wind direction
+    // Moving against the wind = slower, moving with the wind = faster
+    let effectiveSpeed = this.speed;
+    if (this.currentGustInfo.gustActive && this.currentGustInfo.gustIntensity > 0.1) {
+      const gustDir = this.currentGustInfo.gustDirection;
+      const gustStrength = this.currentGustInfo.gustIntensity;
+
+      // If moving against the wind, reduce speed significantly
+      // If moving with the wind, increase speed slightly
+      if ((horizontalInput > 0 && gustDir < 0) || (horizontalInput < 0 && gustDir > 0)) {
+        // Moving against the wind - reduce speed by up to 60%
+        effectiveSpeed = this.speed * (1 - 0.6 * gustStrength);
+      } else if ((horizontalInput > 0 && gustDir > 0) || (horizontalInput < 0 && gustDir < 0)) {
+        // Moving with the wind - boost speed by up to 30%
+        effectiveSpeed = this.speed * (1 + 0.3 * gustStrength);
+      }
     }
 
     // Calculate current limits BEFORE any movement
@@ -385,7 +444,7 @@ export class Player {
 
     // When moving HORIZONTALLY, update the lane percentage
     if (Math.abs(horizontalInput) > 0.01) {
-      this.position.x += horizontalInput * this.speed + windDrift;
+      this.position.x += horizontalInput * effectiveSpeed + windDrift;
       this.position.x = Math.max(minX, Math.min(maxX, this.position.x));
       // Calculate which lane we're in (0.0 = far left, 1.0 = far right)
       this.horizontalLanePercent = (this.position.x - minX) / currentWidth;
@@ -425,7 +484,22 @@ export class Player {
     // Bank/tilt based on movement direction (Z-axis)
     // Moving right = positive input = tilt right (positive z rotation)
     // Moving left = negative input = tilt left (negative z rotation)
-    const targetTilt = horizontalInput * this.maxTilt;
+    let targetTilt = horizontalInput * this.maxTilt;
+
+    // Add wind gust reaction to tilt (model leans INTO the wind to resist it)
+    if (this.currentGustInfo && this.currentGustInfo.gustActive && this.currentGustInfo.gustIntensity > 0.1) {
+      // Model tilts in the direction of the gust (being pushed) - increased strength
+      const gustTilt = this.currentGustInfo.gustDirection * this.currentGustInfo.gustIntensity * 0.8;
+      targetTilt += gustTilt;
+
+      // Debug log every 30 frames during gust
+      if (!this.gustDebugCounter) this.gustDebugCounter = 0;
+      this.gustDebugCounter++;
+      if (this.gustDebugCounter % 30 === 0) {
+        console.log(`GUST EFFECT: direction=${this.currentGustInfo.gustDirection}, intensity=${this.currentGustInfo.gustIntensity.toFixed(2)}, gustTilt=${gustTilt.toFixed(3)}, totalTilt=${targetTilt.toFixed(3)}`);
+      }
+    }
+
     this.tiltAngle += (targetTilt - this.tiltAngle) * this.tiltSpeed;
 
     // Vertical tilt based on up/down movement (X-axis)
@@ -454,10 +528,17 @@ export class Player {
 
     // Apply rotation: forward tilt (x) + vertical tilt, current y rotation, and banking (z)
     const totalXTilt = this.tiltX + this.verticalTilt;
+
+    // Add slight Y rotation during gusts (body twists slightly)
+    let gustYRotation = 0;
+    if (this.currentGustInfo && this.currentGustInfo.gustActive) {
+      gustYRotation = this.currentGustInfo.gustDirection * this.currentGustInfo.gustIntensity * 5; // degrees
+    }
+
     this.object.rotation.set(
       totalXTilt * Math.PI / 180, // X-axis: base tilt + vertical movement tilt
-      this.currentRotationY * Math.PI / 180, // Y-axis: left/right turn
-      this.tiltAngle // Z-axis: banking when moving left/right
+      (this.currentRotationY + gustYRotation) * Math.PI / 180, // Y-axis: left/right turn + gust twist
+      this.tiltAngle // Z-axis: banking when moving left/right + gust lean
     );
 
     // Update physics for hair and dress

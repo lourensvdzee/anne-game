@@ -20,10 +20,107 @@
       height: 100vh;
       touch-action: none;
     }
+    #wind-meter {
+      position: fixed;
+      bottom: 30px;
+      left: 30px;
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 15px;
+      padding: 20px 25px;
+      color: white;
+      font-size: 16px;
+      font-family: 'Segoe UI', sans-serif;
+      backdrop-filter: blur(8px);
+      min-width: 200px;
+    }
+    #wind-meter .label {
+      opacity: 0.8;
+      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    #wind-meter .wind-display {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    #wind-meter .arrow {
+      font-size: 36px;
+      transition: transform 0.3s ease;
+    }
+    #wind-meter .strength-bar {
+      flex: 1;
+      height: 12px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    #wind-meter .strength-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #FFC107, #FF5722);
+      border-radius: 6px;
+      transition: width 0.2s ease;
+      width: 0%;
+    }
+    #wind-meter .gust-indicator {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #FFC107;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      font-weight: bold;
+    }
+    #wind-meter .gust-indicator.active {
+      opacity: 1;
+    }
+    #score-display {
+      position: fixed;
+      top: 30px;
+      left: 30px;
+      color: white;
+      font-size: 24px;
+      font-family: 'Segoe UI', sans-serif;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    }
+    .hit-indicator {
+      position: fixed;
+      top: 60px;
+      left: 30px;
+      color: #ff4444;
+      font-size: 32px;
+      font-family: 'Segoe UI', sans-serif;
+      font-weight: bold;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+      opacity: 0;
+      transform: translateY(0);
+      transition: opacity 0.1s ease-out;
+      pointer-events: none;
+    }
+    .hit-indicator.show {
+      animation: hitFade 1s ease-out forwards;
+    }
+    @keyframes hitFade {
+      0% { opacity: 1; transform: translateY(0) scale(1.2); }
+      100% { opacity: 0; transform: translateY(-30px) scale(1); }
+    }
   </style>
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
+  <div id="score-display">Score: 0</div>
+  <div id="hit-indicator" class="hit-indicator">-1</div>
+  <div id="wind-meter">
+    <div class="label">WIND</div>
+    <div class="wind-display">
+      <span class="arrow" id="wind-arrow">→</span>
+      <div class="strength-bar">
+        <div class="strength-fill" id="wind-strength"></div>
+      </div>
+    </div>
+    <div class="gust-indicator" id="gust-indicator">GUST!</div>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

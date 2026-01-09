@@ -3,6 +3,8 @@ import { Player } from './player.js';
 import { InputManager } from './input.js';
 import { CloudSystem } from './clouds.js';
 import { SpeedEffectSystem } from './speedEffects.js';
+import { BirdSystem } from './birds.js';
+import { TerrainSystem } from './terrain.js';
 
 export class Game {
   constructor(canvas) {
@@ -18,15 +20,29 @@ export class Game {
     this.input = new InputManager();
     this.player = new Player(this.scene);
     this.clouds = new CloudSystem(this.scene);
+    this.birds = new BirdSystem(this.scene);
+    this.terrain = new TerrainSystem(this.scene);
     this.speedEffects = null; // Will be initialized after player loads
 
     // Wind effect
     this.windTime = 0;
     this.windStrength = 0.002; // Very subtle
 
+    // Wind gust effect
+    this.windGustTime = 0;
+    this.windGustActive = false;
+    this.windGustDirection = 0;
+    this.windGustStrength = 0;
+    this.nextGustTime = 5000 + Math.random() * 10000; // 5-15 seconds until first gust
+
     // Speed effects toggle
     this.speedEffectsEnabled = true;
     this.clock = new THREE.Clock();
+
+    // Score system
+    this.score = 0;
+    this.lastHitTime = 0;
+    this.hitCooldown = 1000; // 1 second cooldown between hits
 
     this.setupRenderer();
     this.setupCamera();
@@ -246,6 +262,23 @@ export class Game {
           this.cameraZ += 0.2;
           this.updateCamera();
           break;
+
+        // Bird debug controls
+        case 'Space': // Pause/resume birds
+          if (this.birds) {
+            this.birds.togglePause();
+          }
+          break;
+        case 'KeyD': // Toggle bird debug mode
+          if (this.birds) {
+            this.birds.toggleDebug();
+          }
+          break;
+        case 'KeyF': // Toggle bird number labels
+          if (this.birds) {
+            this.birds.toggleLabels();
+          }
+          break;
       }
     });
   }
@@ -275,6 +308,7 @@ export class Game {
 
   update() {
     const delta = this.clock.getDelta();
+    const currentTime = Date.now();
 
     // Get input from player
     let horizontalInput = this.input.getHorizontalInput();
@@ -282,17 +316,157 @@ export class Game {
 
     // Add gentle wind drift
     this.windTime += 0.01;
-    const windDrift = Math.sin(this.windTime) * this.windStrength;
+    let windDrift = Math.sin(this.windTime) * this.windStrength;
 
-    // Update player with input + wind
-    this.player.update(horizontalInput, verticalInput, windDrift);
+    // Wind gust system - occasional stronger pushes
+    if (!this.windGustActive && currentTime > this.nextGustTime) {
+      // Start a new gust
+      this.windGustActive = true;
+      this.windGustTime = 0;
+      this.windGustDirection = Math.random() > 0.5 ? 1 : -1; // Random left or right
+      this.windGustStrength = 0.02 + Math.random() * 0.02; // 0.02-0.04 strength (stronger)
+      this.currentGustDuration = 2.5 + Math.random() * 1.5; // 2.5-4 seconds (much longer)
+      console.log(`Wind gust! Direction: ${this.windGustDirection > 0 ? 'right' : 'left'}, Duration: ${this.currentGustDuration.toFixed(1)}s`);
+    }
+
+    let gustIntensity = 0;
+    if (this.windGustActive) {
+      this.windGustTime += delta;
+      const gustProgress = this.windGustTime / this.currentGustDuration;
+
+      if (gustProgress < 1) {
+        // Smooth bell curve for gust intensity
+        gustIntensity = Math.sin(gustProgress * Math.PI);
+        windDrift += this.windGustDirection * this.windGustStrength * gustIntensity;
+      } else {
+        // Gust finished
+        this.windGustActive = false;
+        this.nextGustTime = currentTime + 6000 + Math.random() * 10000; // 6-16 seconds until next gust
+      }
+    }
+
+    // Update player with input + wind + gust info for visual reaction
+    this.player.update(horizontalInput, verticalInput, windDrift, {
+      gustActive: this.windGustActive,
+      gustDirection: this.windGustDirection,
+      gustIntensity: gustIntensity
+    });
+
+    // Update wind meter UI
+    this.updateWindMeter(windDrift, gustIntensity);
 
     // Update cloud system
     this.clouds.update();
 
+    // Update bird system
+    this.birds.update(delta);
+
+    // Check for bird collisions (only with close-up birds)
+    this.checkBirdCollisions(currentTime);
+
+    // Update terrain system
+    this.terrain.update(delta);
+
     // Update speed effects
     if (this.speedEffects && this.speedEffectsEnabled) {
       this.speedEffects.update(delta);
+    }
+  }
+
+  checkBirdCollisions(currentTime) {
+    if (!this.player.object || !this.birds) return;
+
+    // Only check if cooldown has passed
+    if (currentTime - this.lastHitTime < this.hitCooldown) return;
+
+    // Use actual object position, not the logical position
+    // The player object is at Z: -1 with Y offset
+    const playerObjPos = this.player.object.position;
+    const collisionRadiusXY = 1.2; // Collision distance in X/Y
+    const collisionRadiusZ = 2.0; // Z tolerance
+
+    for (const birdData of this.birds.birds) {
+      // Only check close-up birds for collision
+      if (!birdData.isCloseUp) continue;
+
+      const birdPos = birdData.mesh.position;
+
+      // Check Z first - bird must be near player's Z plane (-1)
+      const dz = Math.abs(birdPos.z - playerObjPos.z);
+      if (dz > collisionRadiusZ) continue;
+
+      // Check X/Y distance
+      const dx = birdPos.x - playerObjPos.x;
+      const dy = birdPos.y - playerObjPos.y;
+      const distanceXY = Math.sqrt(dx * dx + dy * dy);
+
+      // Debug logging for close birds
+      if (dz < 3) {
+        console.log(`Bird #${birdData.id} near player: dist=${distanceXY.toFixed(2)}, dz=${dz.toFixed(2)}, bird(${birdPos.x.toFixed(1)},${birdPos.y.toFixed(1)},${birdPos.z.toFixed(1)}) player(${playerObjPos.x.toFixed(1)},${playerObjPos.y.toFixed(1)},${playerObjPos.z.toFixed(1)})`);
+      }
+
+      if (distanceXY < collisionRadiusXY) {
+        // Hit!
+        this.score -= 1;
+        this.lastHitTime = currentTime;
+        this.showHitIndicator();
+        this.updateScoreDisplay();
+        this.player.playHitAnimation(); // Trigger hit animation
+        console.log(`🔴 BIRD COLLISION! Bird #${birdData.id} | Score: ${this.score}`);
+        break;
+      }
+    }
+  }
+
+  showHitIndicator() {
+    const hitIndicator = document.getElementById('hit-indicator');
+    if (!hitIndicator) return;
+
+    // Remove and re-add class to restart animation
+    hitIndicator.classList.remove('show');
+    // Force reflow
+    void hitIndicator.offsetWidth;
+    hitIndicator.classList.add('show');
+  }
+
+  updateScoreDisplay() {
+    const scoreDisplay = document.getElementById('score-display');
+    if (scoreDisplay) {
+      scoreDisplay.textContent = `Score: ${this.score}`;
+    }
+  }
+
+  updateWindMeter(windDrift, gustIntensity) {
+    const arrow = document.getElementById('wind-arrow');
+    const strengthBar = document.getElementById('wind-strength');
+    const gustIndicator = document.getElementById('gust-indicator');
+
+    if (!arrow || !strengthBar || !gustIndicator) return;
+
+    // Calculate total wind strength (base + gust)
+    const baseStrength = Math.abs(windDrift) / this.windStrength; // 0-1 for base wind
+    const gustStrength = gustIntensity; // 0-1 for gust
+    const totalStrength = Math.min(1, baseStrength * 0.3 + gustStrength * 0.7);
+
+    // Update strength bar
+    strengthBar.style.width = `${totalStrength * 100}%`;
+
+    // Update arrow direction based on wind drift
+    if (windDrift > 0.001) {
+      arrow.textContent = '→';
+      arrow.style.transform = 'scaleX(1)';
+    } else if (windDrift < -0.001) {
+      arrow.textContent = '←';
+      arrow.style.transform = 'scaleX(1)';
+    } else {
+      arrow.textContent = '•';
+    }
+
+    // Show gust indicator
+    if (this.windGustActive && gustIntensity > 0.3) {
+      gustIndicator.classList.add('active');
+    } else {
+      gustIndicator.classList.remove('active');
     }
   }
 
